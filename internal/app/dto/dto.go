@@ -6,10 +6,10 @@ package dto
 import "time"
 
 type ErroCorpo struct {
-	Codigo        string         `json:"codigo"`
-	Mensagem      string         `json:"mensagem"`
-	CorrelationID string         `json:"correlation_id"`
-	Campos        []ErroCampo    `json:"campos,omitempty"`
+	Codigo        string      `json:"codigo"`
+	Mensagem      string      `json:"mensagem"`
+	CorrelationID string      `json:"correlation_id"`
+	Campos        []ErroCampo `json:"campos,omitempty"`
 }
 
 type ErroCampo struct {
@@ -18,22 +18,22 @@ type ErroCampo struct {
 }
 
 type SimulacaoRequest struct {
-	CedenteID       int64  `json:"cedente_id" validate:"required,gt=0"`
-	TipoRecebivel   string `json:"tipo_recebivel" validate:"required"`
-	ValorFace       string `json:"valor_face" validate:"required"`
-	MoedaTitulo     string `json:"moeda_titulo" validate:"required,len=3"`
-	MoedaPagamento  string `json:"moeda_pagamento" validate:"required,len=3"`
-	DataVencimento  string `json:"data_vencimento" validate:"required"`
-	DataOperacao    string `json:"data_operacao,omitempty"`
+	CedenteID      int64  `json:"cedente_id" validate:"required,gt=0"`
+	TipoRecebivel  string `json:"tipo_recebivel" validate:"required"`
+	ValorFace      string `json:"valor_face" validate:"required"`
+	MoedaTitulo    string `json:"moeda_titulo" validate:"required,len=3"`
+	MoedaPagamento string `json:"moeda_pagamento" validate:"required,len=3"`
+	DataVencimento string `json:"data_vencimento" validate:"required"`
+	DataOperacao   string `json:"data_operacao,omitempty"`
 }
 
 type SimulacaoResponse struct {
-	ValorPresente string `json:"valor_presente"`
-	ValorLiquido  string `json:"valor_liquido"`
-	Desagio       string `json:"desagio"`
-	MoedaTitulo   string `json:"moeda_titulo"`
+	ValorPresente  string `json:"valor_presente"`
+	ValorLiquido   string `json:"valor_liquido"`
+	Desagio        string `json:"desagio"`
+	MoedaTitulo    string `json:"moeda_titulo"`
 	MoedaPagamento string `json:"moeda_pagamento"`
-	DataOperacao  string `json:"data_operacao"`
+	DataOperacao   string `json:"data_operacao"`
 	DataVencimento string `json:"data_vencimento"`
 }
 
@@ -48,19 +48,19 @@ type TransacaoCreateRequest struct {
 }
 
 type TransacaoResponse struct {
-	ID                string     `json:"id"`
-	Status            string     `json:"status"`
-	Versao            int32      `json:"versao"`
-	ValorFace         string     `json:"valor_face"`
-	ValorPresente     string     `json:"valor_presente"`
-	ValorLiquido      string     `json:"valor_liquido"`
-	Desagio           string     `json:"desagio"`
-	MoedaTitulo       string     `json:"moeda_titulo"`
-	MoedaPagamento    string     `json:"moeda_pagamento"`
-	DataOperacao      string     `json:"data_operacao"`
-	DataVencimento    string     `json:"data_vencimento"`
-	LiquidadaEm       *time.Time `json:"liquidada_em,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID             string     `json:"id"`
+	Status         string     `json:"status"`
+	Versao         int32      `json:"versao"`
+	ValorFace      string     `json:"valor_face"`
+	ValorPresente  string     `json:"valor_presente"`
+	ValorLiquido   string     `json:"valor_liquido"`
+	Desagio        string     `json:"desagio"`
+	MoedaTitulo    string     `json:"moeda_titulo"`
+	MoedaPagamento string     `json:"moeda_pagamento"`
+	DataOperacao   string     `json:"data_operacao"`
+	DataVencimento string     `json:"data_vencimento"`
+	LiquidadaEm    *time.Time `json:"liquidada_em,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 type CotacaoRequest struct {
@@ -81,10 +81,27 @@ type TipoRecebivelResponse struct {
 	Nome   string `json:"nome"`
 }
 
+type CotacaoResponse struct {
+	ID             int64      `json:"id"`
+	MoedaBase      string     `json:"moeda_base"`
+	MoedaCotacao   string     `json:"moeda_cotacao"`
+	Taxa           string     `json:"taxa"`
+	VigenciaInicio time.Time  `json:"vigencia_inicio"`
+	VigenciaFim    *time.Time `json:"vigencia_fim,omitempty"`
+}
+
+type TaxaBaseResponse struct {
+	ID             int64      `json:"id"`
+	Moeda          string     `json:"moeda"`
+	TaxaMensal     string     `json:"taxa_mensal"`
+	VigenciaInicio time.Time  `json:"vigencia_inicio"`
+	VigenciaFim    *time.Time `json:"vigencia_fim,omitempty"`
+}
+
 type Paginada struct {
-	Total      int64       `json:"total"`
-	Pagina     int         `json:"pagina"`
-	Tamanho    int         `json:"tamanho"`
-	TotalPaginas int       `json:"total_paginas"`
-	Items      interface{} `json:"items"`
+	Total        int64       `json:"total"`
+	Pagina       int         `json:"pagina"`
+	Tamanho      int         `json:"tamanho"`
+	TotalPaginas int         `json:"total_paginas"`
+	Items        interface{} `json:"items"`
 }

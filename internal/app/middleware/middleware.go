@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -34,6 +35,17 @@ func CorrelationID(c *gin.Context) string {
 	return ""
 }
 
+// CorrelationIDFromContext lê o identificador de correlação a partir de um
+// context.Context puro — usado pelos operations Huma, que recebem apenas
+// context.Context (não *gin.Context). Correlation() grava o mesmo valor
+// nos dois lugares na mesma requisição.
+func CorrelationIDFromContext(ctx context.Context) string {
+	if s, ok := ctx.Value(correlationIDKey).(string); ok {
+		return s
+	}
+	return ""
+}
+
 func Correlation() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.GetHeader(correlationHeader)
@@ -42,6 +54,8 @@ func Correlation() gin.HandlerFunc {
 		}
 		c.Set(string(correlationIDKey), id)
 		c.Header(correlationHeader, id)
+		ctx := context.WithValue(c.Request.Context(), correlationIDKey, id)
+		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
 }

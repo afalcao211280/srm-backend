@@ -12,10 +12,10 @@ import (
 )
 
 type Moeda struct {
-	ID         int16
-	Codigo     string
-	Nome       string
-	casasDec   int16
+	ID       int16
+	Codigo   string
+	Nome     string
+	casasDec int16
 }
 
 func (m Moeda) CasasDecimais() int16 { return m.casasDec }
@@ -114,19 +114,28 @@ func (r *CedenteRepo) PorID(ctx context.Context, id int64) (Cedente, error) {
 }
 
 type Cotacao struct {
-	ID              int64
-	MoedaBase       string
-	MoedaCotacao    string
-	Taxa            money.Decimal
-	VigenciaInicio  time.Time
-	VigenciaFim     *time.Time
+	ID             int64
+	MoedaBase      string
+	MoedaCotacao   string
+	Taxa           money.Decimal
+	VigenciaInicio time.Time
+	VigenciaFim    *time.Time
 }
 
 type CotacaoRepo struct{ pool *pgxpool.Pool }
 
 func NewCotacaoRepo(pool *pgxpool.Pool) *CotacaoRepo { return &CotacaoRepo{pool: pool} }
 
-func (r *CotacaoRepo) Vigente(ctx context.Context, base, cotacao string, em time.Time) (Cotacao, error) {
+// ParCotacao identifica o par de moedas e a data de referência de uma
+// consulta de cotação (S107: agrupa os parâmetros para caber em ≤3
+// incluindo context.Context).
+type ParCotacao struct {
+	Base    string
+	Cotacao string
+	Em      time.Time
+}
+
+func (r *CotacaoRepo) Vigente(ctx context.Context, p ParCotacao) (Cotacao, error) {
 	var c Cotacao
 	var vigenciaFim *time.Time
 	err := r.pool.QueryRow(ctx, `
@@ -139,7 +148,7 @@ func (r *CotacaoRepo) Vigente(ctx context.Context, base, cotacao string, em time
 		  AND (cc.vigencia_fim IS NULL OR cc.vigencia_fim > $3)
 		ORDER BY cc.vigencia_inicio DESC
 		LIMIT 1`,
-		base, cotacao, em,
+		p.Base, p.Cotacao, p.Em,
 	).Scan(&c.ID, &c.MoedaBase, &c.MoedaCotacao, &c.Taxa, &c.VigenciaInicio, &vigenciaFim)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Cotacao{}, ErrNaoEncontrado
@@ -148,13 +157,21 @@ func (r *CotacaoRepo) Vigente(ctx context.Context, base, cotacao string, em time
 	return c, err
 }
 
-func (r *CotacaoRepo) Criar(ctx context.Context, base, cotacao string, taxa money.Decimal, inicio time.Time) (Cotacao, error) {
+// NovaCotacao são os dados para registrar uma cotação de câmbio.
+type NovaCotacao struct {
+	Base    string
+	Cotacao string
+	Taxa    money.Decimal
+	Inicio  time.Time
+}
+
+func (r *CotacaoRepo) Criar(ctx context.Context, n NovaCotacao) (Cotacao, error) {
 	var idMoedaBase, idMoedaCotacao int16
-	if err := r.pool.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, base).Scan(&idMoedaBase); err != nil {
-		return Cotacao{}, fmt.Errorf("moeda base %s: %w", base, err)
+	if err := r.pool.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, n.Base).Scan(&idMoedaBase); err != nil {
+		return Cotacao{}, fmt.Errorf("moeda base %s: %w", n.Base, err)
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, cotacao).Scan(&idMoedaCotacao); err != nil {
-		return Cotacao{}, fmt.Errorf("moeda cotação %s: %w", cotacao, err)
+	if err := r.pool.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, n.Cotacao).Scan(&idMoedaCotacao); err != nil {
+		return Cotacao{}, fmt.Errorf("moeda cotação %s: %w", n.Cotacao, err)
 	}
 	var c Cotacao
 	var vigenciaFim *time.Time
@@ -162,7 +179,7 @@ func (r *CotacaoRepo) Criar(ctx context.Context, base, cotacao string, taxa mone
 		INSERT INTO cotacoes_cambio (moeda_base_id, moeda_cotacao_id, taxa, vigencia_inicio)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, $5::text, $6::text, taxa, vigencia_inicio, NULL::timestamptz`,
-		idMoedaBase, idMoedaCotacao, taxa, inicio, base, cotacao,
+		idMoedaBase, idMoedaCotacao, n.Taxa, n.Inicio, n.Base, n.Cotacao,
 	).Scan(&c.ID, &c.MoedaBase, &c.MoedaCotacao, &c.Taxa, &c.VigenciaInicio, &vigenciaFim)
 	c.VigenciaFim = vigenciaFim
 	return c, err
@@ -201,26 +218,24 @@ func (r *TaxaBaseRepo) Vigente(ctx context.Context, moeda string, em time.Time) 
 	return t, err
 }
 
+// NovaTaxaBase são os dados para registrar uma taxa base.
+type NovaTaxaBase struct {
+	Moeda  string
+	Taxa   money.Decimal
+	Inicio time.Time
+}
+
 // Criar registra uma nova taxa base encerrando a vigência anterior da mesma
 // moeda, dentro de uma única transação, para impedir duas vigências
 // simultâneas para a mesma moeda.
-func (r *TaxaBaseRepo) Criar(ctx context.Context, moeda string, taxa money.Decimal, inicio time.Time) (TaxaBase, error) {
+func (r *TaxaBaseRepo) Criar(ctx context.Context, n NovaTaxaBase) (TaxaBase, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return TaxaBase{}, err
 	}
-	defer tx.Rollback(ctx)
-	var idMoeda int16
-	if err := tx.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, moeda).Scan(&idMoeda); err != nil {
-		return TaxaBase{}, fmt.Errorf("moeda %s: %w", moeda, err)
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE taxas_base
-		   SET vigencia_fim = $1
-		 WHERE moeda_id = $2
-		   AND vigencia_fim IS NULL`,
-		inicio, idMoeda,
-	); err != nil {
+	defer func() { _ = tx.Rollback(ctx) }()
+	idMoeda, err := encerrarVigenciaAnterior(ctx, tx, n)
+	if err != nil {
 		return TaxaBase{}, err
 	}
 	var t TaxaBase
@@ -229,7 +244,7 @@ func (r *TaxaBaseRepo) Criar(ctx context.Context, moeda string, taxa money.Decim
 		INSERT INTO taxas_base (moeda_id, taxa_mensal, vigencia_inicio)
 		VALUES ($1, $2, $3)
 		RETURNING id, $4::text, taxa_mensal, vigencia_inicio, NULL::timestamptz`,
-		idMoeda, taxa, inicio, moeda,
+		idMoeda, n.Taxa, n.Inicio, n.Moeda,
 	).Scan(&t.ID, &t.Moeda, &t.TaxaMensal, &t.VigenciaInicio, &vigenciaFim)
 	if err != nil {
 		return TaxaBase{}, err
@@ -239,4 +254,24 @@ func (r *TaxaBaseRepo) Criar(ctx context.Context, moeda string, taxa money.Decim
 	}
 	t.VigenciaFim = vigenciaFim
 	return t, nil
+}
+
+// encerrarVigenciaAnterior resolve o id da moeda e fecha a vigência aberta
+// existente, garantindo que nunca haja duas taxas vigentes simultaneamente
+// para a mesma moeda.
+func encerrarVigenciaAnterior(ctx context.Context, tx pgx.Tx, n NovaTaxaBase) (int16, error) {
+	var idMoeda int16
+	if err := tx.QueryRow(ctx, `SELECT id FROM moedas WHERE codigo = $1`, n.Moeda).Scan(&idMoeda); err != nil {
+		return 0, fmt.Errorf("moeda %s: %w", n.Moeda, err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE taxas_base
+		   SET vigencia_fim = $1
+		 WHERE moeda_id = $2
+		   AND vigencia_fim IS NULL`,
+		n.Inicio, idMoeda,
+	); err != nil {
+		return 0, err
+	}
+	return idMoeda, nil
 }

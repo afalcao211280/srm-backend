@@ -1,5 +1,8 @@
 // Package server monta o servidor HTTP com Gin e injeta as dependências
 // manualmente. Não há container mágico (golang-expert: DI manual é fixo).
+// As rotas de negócio são operações Huma (OpenAPI 3.1 + Swagger/docs
+// automáticos) montadas sobre o mesmo *gin.Engine; healthz/readyz/metrics
+// continuam gin puro, por não fazerem parte da API documentada.
 package server
 
 import (
@@ -8,8 +11,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/srm-asset/srm-backend/internal/app/handler"
 	"github.com/srm-asset/srm-backend/internal/app/middleware"
 	"github.com/srm-asset/srm-backend/internal/domain/precificacao"
@@ -27,33 +33,51 @@ type Deps struct {
 	Pool   *pgxpool.Pool
 }
 
-func Build(ctx context.Context, d Deps) (*http.Server, error) {
-	registry := recebivel.DefaultRegistry()
-	motor := precificacao.NewMotor(registry)
-	moedaRepo := postgres.NewMoedaRepo(d.Pool)
-	tipoRepo := postgres.NewTipoRecebivelRepo(d.Pool)
-	cedenteRepo := postgres.NewCedenteRepo(d.Pool)
-	cotacaoRepo := postgres.NewCotacaoRepo(d.Pool)
-	taxaRepo := postgres.NewTaxaBaseRepo(d.Pool)
-	txRepo := postgres.NewTransacaoRepo(d.Pool)
+func Build(_ context.Context, d Deps) (*http.Server, error) {
+	svc, repos := montarServico(d)
+	r := montarEngine(d)
+
+	middleware.InstalarErroHuma()
+	humaConfig := huma.DefaultConfig("SRM Credit Engine API", "1.0.0")
+	humaConfig.Info.Description = "Plataforma de cessão de crédito multimoedas — precificação, liquidação e extrato de recebíveis."
+	api := humagin.New(r, humaConfig)
+
+	registrarOperacoes(api, svc, repos)
+	report.MontarHuma(api, d.Pool, d.Logger)
+
+	return &http.Server{
+		Addr:              d.Cfg.HTTPAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+	}, nil
+}
+
+func montarServico(d Deps) (*handler.ServicoPrecificacao, Repos) {
+	repos := Repos{
+		Tx:      postgres.NewTransacaoRepo(d.Pool),
+		Cotacao: postgres.NewCotacaoRepo(d.Pool),
+		Taxa:    postgres.NewTaxaBaseRepo(d.Pool),
+		Tipo:    postgres.NewTipoRecebivelRepo(d.Pool),
+	}
 	clienteCotacao := cambio.NovoCliente(cambio.Opcoes{
 		URL:     d.Cfg.CambioURL,
 		Timeout: time.Duration(d.Cfg.CambioTimeoutMS) * time.Millisecond,
 	}, d.Logger)
 	deps := handler.Deps{
-		Motor: motor, Moedas: moedaRepo, Tipos: tipoRepo, Cedentes: cedenteRepo,
-		Cotacoes: cotacaoRepo, Taxas: taxaRepo, Txs: txRepo,
-		Cliente: clienteCotacao, Logger: d.Logger,
+		Motor:    precificacao.NewMotor(recebivel.DefaultRegistry()),
+		Moedas:   postgres.NewMoedaRepo(d.Pool),
+		Tipos:    repos.Tipo,
+		Cedentes: postgres.NewCedenteRepo(d.Pool),
+		Cotacoes: repos.Cotacao,
+		Taxas:    repos.Taxa,
+		Txs:      repos.Tx,
+		Cliente:  clienteCotacao,
+		Logger:   d.Logger,
 	}
-	simulador := handler.NovoSimulador(deps)
-	criador := handler.NovoCriador(deps)
-	detalhe := handler.NovoDetalhe(deps)
-	liquidador := handler.NovoLiquidador(deps)
-	cotacaoH := handler.NovoCotacao(deps)
-	taxaH := handler.NovoTaxaBase(deps)
-	tiposH := handler.NovoTiposRecebivel(deps)
-	extrato := report.NovoExtrato(d.Pool, d.Logger)
+	return handler.NovoServicoPrecificacao(deps), repos
+}
 
+func montarEngine(d Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(middleware.Correlation())
@@ -64,24 +88,7 @@ func Build(ctx context.Context, d Deps) (*http.Server, error) {
 	r.GET("/healthz", healthz)
 	r.GET("/readyz", readyz(d.Pool))
 	r.GET("/metrics", gin.WrapH(metricas.Handler()))
-
-	v1 := r.Group(d.Cfg.APIPrefix)
-	v1.POST("/simulacoes", simulador.Simular)
-	v1.POST("/transacoes", criador.Criar)
-	v1.GET("/transacoes", detalhe.Listar)
-	v1.GET("/transacoes/:id", detalhe.Obter)
-	v1.POST("/transacoes/:id/liquidacao", liquidador.Liquidar)
-	v1.POST("/cotacoes", cotacaoH.Criar)
-	v1.POST("/taxas-base", taxaH.Criar)
-	v1.GET("/taxas-base/vigente", taxaH.Vigente)
-	v1.GET("/tipos-recebivel", tiposH.Listar)
-	v1.GET("/relatorios/extrato-liquidacao", extrato.Handler)
-
-	return &http.Server{
-		Addr:              d.Cfg.HTTPAddr,
-		Handler:           r,
-		ReadHeaderTimeout: 5 * time.Second,
-	}, nil
+	return r
 }
 
 func healthz(c *gin.Context) {
