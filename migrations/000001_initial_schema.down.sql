@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS transacoes;
+DROP TABLE IF EXISTS taxas_base;
+DROP TABLE IF EXISTS cotacoes_cambio;
+DROP TABLE IF EXISTS cedentes;
+DROP TABLE IF EXISTS tipos_recebivel;
+DROP TABLE IF EXISTS moedas;
