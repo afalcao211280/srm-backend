@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/srm-asset/srm-backend/internal/infra/postgres"
 	"github.com/srm-asset/srm-backend/internal/platform/config"
+	"github.com/srm-asset/srm-backend/internal/server"
 )
 
 func main() {
@@ -23,20 +25,25 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pool, err := postgres.NewPool(ctx, postgres.Config{
+		DatabaseURL: cfg.DatabaseURL,
+		MaxConns:    10,
+		MinConns:    1,
+		ConnTimeout: 5 * time.Second,
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	})
-
-	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
+	if err != nil {
+		logger.Error("falha ao criar pool", slog.String("erro", err.Error()))
+		os.Exit(1)
 	}
+	defer pool.Close()
 
+	srv, err := server.Build(ctx, server.Deps{Cfg: cfg, Logger: logger, Pool: pool})
+	if err != nil {
+		logger.Error("falha ao montar servidor", slog.String("erro", err.Error()))
+		os.Exit(1)
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -48,9 +55,9 @@ func main() {
 	}()
 	<-stop
 	logger.Info("shutdown solicitado")
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancelShutdown()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown falhou", slog.String("erro", err.Error()))
 		os.Exit(1)
 	}
