@@ -4,7 +4,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/srm-asset/srm-backend/internal/infra/cambio"
 	"github.com/srm-asset/srm-backend/internal/infra/postgres"
 	"github.com/srm-asset/srm-backend/internal/platform/config"
+	"github.com/srm-asset/srm-backend/internal/platform/metricas"
 	"github.com/srm-asset/srm-backend/internal/report"
 )
 
@@ -59,10 +59,11 @@ func Build(ctx context.Context, d Deps) (*http.Server, error) {
 	r.Use(middleware.Correlation())
 	r.Use(middleware.Recovery(d.Logger))
 	r.Use(middleware.Logger(d.Logger))
+	r.Use(middleware.Metricas())
 
 	r.GET("/healthz", healthz)
 	r.GET("/readyz", readyz(d.Pool))
-	r.GET("/metrics", metricsHandler())
+	r.GET("/metrics", gin.WrapH(metricas.Handler()))
 
 	v1 := r.Group(d.Cfg.APIPrefix)
 	v1.POST("/simulacoes", simulador.Simular)
@@ -97,11 +98,4 @@ func readyz(pool *pgxpool.Pool) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	}
-}
-
-func metricsHandler() gin.HandlerFunc {
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "# HELP srm_up Aplicação SRM Credit Engine em execução\n# TYPE srm_up gauge\nsrm_up 1\n")
-	})
-	return gin.WrapH(h)
 }

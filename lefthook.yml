@@ -1,0 +1,23 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: gofmt -w {staged_files}
+      stage_fixed: true
+    vet:
+      run: go vet ./...
+    test:
+      run: go test ./... -count=1
+    build:
+      run: go build ./...
+
+commit-msg:
+  scripts:
+    conventional:
+      skip: true
+      run: |
+        if ! grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: ' "$1"; then
+          echo "mensagem fora do padrão Conventional Commits"
+          exit 1
+        fi
