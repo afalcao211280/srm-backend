@@ -86,3 +86,13 @@ CREATE TABLE transacoes (
 CREATE INDEX ix_transacoes_data_cedente ON transacoes (data_operacao, cedente_id);
 CREATE INDEX ix_transacoes_moeda_pag_data ON transacoes (moeda_pagamento_id, data_operacao);
 CREATE INDEX ix_transacoes_status ON transacoes (status);
+
+CREATE TABLE transacao_auditoria (
+    id BIGSERIAL PRIMARY KEY,
+    transacao_id UUID NOT NULL REFERENCES transacoes(id),
+    evento VARCHAR(40) NOT NULL,
+    versao INTEGER NOT NULL,
+    instante TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_transacao_auditoria_evento CHECK (evento IN ('CRIADA', 'LIQUIDADA', 'CANCELADA'))
+);
+CREATE INDEX ix_transacao_auditoria_transacao ON transacao_auditoria (transacao_id, instante);
