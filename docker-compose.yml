@@ -23,6 +23,9 @@ services:
       HTTP_ADDR: ":8080"
       CAMBIO_URL: ""
       CAMBIO_TIMEOUT_MS: 2000
+      # Caminho absoluto: dentro do container o cwd do usuário nonroot é
+      # /home/nonroot, não a raiz onde o Dockerfile copia as migrations.
+      MIGRATION_PATH: /migrations
     ports: ["8080:8080"]
     healthcheck:
       test: ["CMD", "/api", "--health"]
@@ -38,6 +41,38 @@ services:
     environment:
       DATABASE_URL: postgres://srm:srm@db:5432/srm?sslmode=disable
     entrypoint: ["/carga"]
+
+  frontend:
+    build:
+      context: ../srm-frontend
+    depends_on:
+      api: {condition: service_healthy}
+    environment:
+      API_INTERNAL_URL: http://api:8080
+    ports: ["3000:3000"]
+
+  # Alvos de teste: usam o estágio "builder" do Dockerfile (com toolchain Go),
+  # não a imagem final distroless. `docker compose run --rm test-unit`.
+  test-unit:
+    build:
+      context: .
+      target: builder
+    profiles: ["test"]
+    command: ["go", "test", "./...", "-race", "-coverprofile=/tmp/coverage.out"]
+
+  # Testes de integração sobem seu próprio container Postgres via
+  # testcontainers-go — precisam do socket do Docker do host montado
+  # (padrão "Docker outside of Docker"), não do serviço "db" do compose.
+  test-integration:
+    build:
+      context: .
+      target: builder
+    profiles: ["test"]
+    environment:
+      TESTCONTAINERS_RYUK_DISABLED: "false"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["go", "test", "-tags=integration", "./...", "-race"]
 
 volumes:
   srm-db-data:
