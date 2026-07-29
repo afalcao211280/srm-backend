@@ -120,6 +120,39 @@ func TestCrossCurrencyBRLparaUSD(t *testing.T) {
 	}
 }
 
+// TestConversaoCambialNaoAlteraValorPresente é a guarda de regressão do
+// incidente registrado em docs/incidente.md: a conversão cambial precisa
+// acontecer estritamente DEPOIS do desconto (§3.2). ValorPresente8Casas é
+// calculado na moeda do título, antes de qualquer conversão — trocar a
+// cotação não pode mudar esse valor. Se a conversão fosse antecipada para
+// antes do cálculo do desconto (o bug do incidente), o valor de face já
+// chegaria alterado em calcularValorPresente e ValorPresente8Casas variaria
+// junto com a cotação, o que este teste proíbe.
+func TestConversaoCambialNaoAlteraValorPresente(t *testing.T) {
+	m := NewMotor(recebivel.DefaultRegistry())
+	base := novaEntrada("10000.00", "0.01", "2026-07-01", "2026-08-15", "DUPLICATA_MERCANTIL", true, "5.4321", "USD")
+	comCotacaoBaixa, err := m.Precificar(base)
+	if err != nil {
+		t.Fatalf("precificar (cotação 5.4321): %v", err)
+	}
+
+	comOutraCotacao := novaEntrada("10000.00", "0.01", "2026-07-01", "2026-08-15", "DUPLICATA_MERCANTIL", true, "9.9999", "USD")
+	comCotacaoAlta, err := m.Precificar(comOutraCotacao)
+	if err != nil {
+		t.Fatalf("precificar (cotação 9.9999): %v", err)
+	}
+
+	if comCotacaoBaixa.ValorPresente8Casas.String() != comCotacaoAlta.ValorPresente8Casas.String() {
+		t.Fatalf("valor presente não deveria depender da cotação de câmbio: %s (cotação 5.4321) vs %s (cotação 9.9999)",
+			comCotacaoBaixa.ValorPresente8Casas, comCotacaoAlta.ValorPresente8Casas)
+	}
+	// As duas cotações DEVEM, por outro lado, produzir valores líquidos
+	// diferentes — provando que a conversão de fato acontece, só que depois.
+	if comCotacaoBaixa.ValorLiquido.String() == comCotacaoAlta.ValorLiquido.String() {
+		t.Fatalf("valor líquido deveria mudar com a cotação, ambos deram %s", comCotacaoBaixa.ValorLiquido)
+	}
+}
+
 func TestBaseNaoPositiva(t *testing.T) {
 	m := NewMotor(recebivel.DefaultRegistry())
 	e := novaEntrada("10000.00", "-1.5", "2026-07-01", "2026-08-15", "DUPLICATA_MERCANTIL", false, "1", "BRL")
