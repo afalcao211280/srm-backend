@@ -64,6 +64,15 @@ func (m *Motor) Precificar(entrada Entrada) (Resultado, error) {
 	if err != nil {
 		return Resultado{}, fmt.Errorf("spread inválido na strategy %s: %w", strategy.Codigo(), err)
 	}
+	// Converte o valor de face para a moeda de pagamento antes de calcular
+	// o desconto, para o desconto já refletir a moeda final.
+	if entrada.MoedaTitulo != entrada.MoedaPagamento && entrada.TemCotacao {
+		convertido, cerr := entrada.ValorFace.Div(entrada.Cotacao)
+		if cerr != nil {
+			return Resultado{}, fmt.Errorf("conversão antecipada falhou: %w", cerr)
+		}
+		entrada.ValorFace = convertido
+	}
 	prazo, valorPresente, err := calcularValorPresente(entrada, spread)
 	if err != nil {
 		return Resultado{}, err
