@@ -1,0 +1,67 @@
+erDiagram
+    moedas ||--o{ cotacoes_cambio : "base/cotacao"
+    moedas ||--o{ taxas_base : "moeda"
+    moedas ||--o{ transacoes : "titulo/pagamento"
+    tipos_recebivel ||--o{ transacoes : "tipo"
+    cedentes ||--o{ transacoes : "cedente"
+    transacoes ||--o{ transacao_auditoria : "audita"
+
+    moedas {
+        SMALLSERIAL id PK
+        CHAR codigo
+        VARCHAR nome
+        SMALLINT casas_decimais
+    }
+    tipos_recebivel {
+        SMALLSERIAL id PK
+        VARCHAR codigo
+        VARCHAR nome
+        BOOLEAN ativo
+    }
+    cedentes {
+        BIGSERIAL id PK
+        VARCHAR nome
+        VARCHAR documento
+        BOOLEAN ativo
+    }
+    cotacoes_cambio {
+        BIGSERIAL id PK
+        SMALLINT moeda_base_id FK
+        SMALLINT moeda_cotacao_id FK
+        NUMERIC taxa
+        TIMESTAMPTZ vigencia_inicio
+        TIMESTAMPTZ vigencia_fim
+    }
+    taxas_base {
+        BIGSERIAL id PK
+        SMALLINT moeda_id FK
+        NUMERIC taxa_mensal
+        TIMESTAMPTZ vigencia_inicio
+        TIMESTAMPTZ vigencia_fim
+    }
+    transacoes {
+        UUID id PK
+        BIGINT cedente_id FK
+        SMALLINT tipo_recebivel_id FK
+        SMALLINT moeda_titulo_id FK
+        SMALLINT moeda_pagamento_id FK
+        NUMERIC valor_face
+        NUMERIC valor_presente
+        NUMERIC valor_liquido
+        NUMERIC desagio
+        NUMERIC spread_aplicado
+        NUMERIC taxa_base_aplicada
+        NUMERIC cotacao_aplicada
+        DATE data_operacao
+        DATE data_vencimento
+        VARCHAR status
+        INTEGER versao
+        TIMESTAMPTZ liquidada_em
+    }
+    transacao_auditoria {
+        BIGSERIAL id PK
+        UUID transacao_id FK
+        VARCHAR evento
+        INTEGER versao
+        TIMESTAMPTZ instante
+    }

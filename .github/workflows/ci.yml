@@ -1,0 +1,43 @@
+name: CI Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+      - run: gofmt -l . | grep -v '^$' && exit 1 || true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+  test:
+    runs-on: ubuntu-latest
+    # Sem serviço postgres manual: os testes de integração sobem o
+    # próprio Postgres via testcontainers-go (internal/platform/testdb),
+    # descartável por pacote — o runner só precisa ter Docker, que
+    # ubuntu-latest já tem nativamente.
+    env:
+      GOFLAGS: -mod=mod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+      - run: go mod download
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
+      - run: go test -tags=integration ./... -race
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
