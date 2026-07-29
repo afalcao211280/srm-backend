@@ -4,6 +4,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -177,6 +178,69 @@ func TestLiquidacaoConflitoNaoDeixaAuditoria(t *testing.T) {
 	if totalAuditoria != 0 {
 		t.Fatalf("conflito não deveria deixar rastro de auditoria, obtido %d registros", totalAuditoria)
 	}
+}
+
+// TestLiquidacaoFalhaNaAuditoriaRevisaStatus prova a metade "tudo ou nada"
+// da atomicidade: quando o UPDATE de status já rodou dentro da transação
+// mas o INSERT de auditoria falha em seguida, o rollback desfaz o UPDATE
+// também — não existe estado "liquidado sem auditoria" pela metade. A falha
+// no INSERT é forçada de forma determinística por uma CHECK constraint
+// NOT VALID, sem depender de timing ou de dados inválidos que o INSERT já
+// rejeitaria antes mesmo do rollback importar.
+func TestLiquidacaoFalhaNaAuditoriaRevisaStatus(t *testing.T) {
+	pool := setupTestDB(t)
+	truncate(t, pool)
+	ctx := context.Background()
+	f := criarFixture(t, ctx, pool)
+
+	repo := NewTransacaoRepo(pool)
+	id := "77777777-7777-7777-7777-777777777777"
+	if err := repo.Criar(ctx, transacaoFixture(id, f)); err != nil {
+		t.Fatalf("criar: %v", err)
+	}
+	forcarFalhaAuditoria(t, ctx, pool)
+
+	_, err := repo.Liquidar(ctx, LiquidacaoInput{ID: id, Versao: 1, LiquidadaEm: time.Now().UTC()})
+	if err == nil || errors.Is(err, ErroConflitoLiquidacao) {
+		t.Fatalf("esperado erro de constraint do postgres na auditoria, obtido %v", err)
+	}
+
+	atual, err := repo.PorID(ctx, id)
+	if err != nil {
+		t.Fatalf("por id: %v", err)
+	}
+	if atual.Status != StatusPendente || atual.Versao != 1 {
+		t.Fatalf("rollback deveria reverter o UPDATE de status, obtido status=%s versao=%d", atual.Status, atual.Versao)
+	}
+	var totalAuditoria int
+	if err := pool.QueryRow(ctx,
+		"SELECT count(*) FROM transacao_auditoria WHERE transacao_id = $1", id,
+	).Scan(&totalAuditoria); err != nil {
+		t.Fatalf("contar auditoria: %v", err)
+	}
+	if totalAuditoria != 0 {
+		t.Fatalf("insert de auditoria falhou mas deixou rastro, obtido %d registros", totalAuditoria)
+	}
+}
+
+// forcarFalhaAuditoria adiciona uma CHECK constraint que faz todo INSERT
+// futuro em transacao_auditoria falhar, e agenda sua remoção: os testes
+// deste arquivo compartilham um único container Postgres via TestMain, e a
+// constraint precisa sumir antes dos testes seguintes rodarem.
+func forcarFalhaAuditoria(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		"ALTER TABLE transacao_auditoria ADD CONSTRAINT chk_forca_falha_teste CHECK (false) NOT VALID",
+	); err != nil {
+		t.Fatalf("adicionar constraint de falha forçada: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(),
+			"ALTER TABLE transacao_auditoria DROP CONSTRAINT chk_forca_falha_teste",
+		); err != nil {
+			t.Fatalf("remover constraint de falha forçada: %v", err)
+		}
+	})
 }
 
 func TestRoundTripDecimal(t *testing.T) {
