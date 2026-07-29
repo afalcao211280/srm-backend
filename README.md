@@ -54,11 +54,15 @@ Detalhes em `docs/guia-de-testes.md`.
 
 ## Acesso à API
 
-A interface Swagger pode ser servida em `http://localhost:8080/swagger/index.html` quando o `swag` estiver configurado no pipeline.
+A documentação OpenAPI 3.1 é gerada em runtime pelo Huma v2 — nenhum arquivo estático versionado. Interface Swagger em `http://localhost:8080/docs`, JSON bruto em `http://localhost:8080/openapi.json`.
 
-Exemplo de simulação com `curl`:
+Exemplo executável de simulação com `curl` (cenário "duplicata 45 dias" da spec de precificação). A simulação não persiste nada e não exige `cedente_id` existente, mas depende de uma taxa base vigente para a moeda na data da operação — cadastre uma antes:
 
 ```bash
+curl -X POST http://localhost:8080/api/v1/taxas-base \
+  -H "Content-Type: application/json" \
+  -d '{"moeda":"BRL","taxa_mensal":"0.01","vigencia_inicio":"2026-01-01T00:00:00Z"}'
+
 curl -X POST http://localhost:8080/api/v1/simulacoes \
   -H "Content-Type: application/json" \
   -d '{
@@ -67,11 +71,12 @@ curl -X POST http://localhost:8080/api/v1/simulacoes \
     "valor_face": "10000.00",
     "moeda_titulo": "BRL",
     "moeda_pagamento": "BRL",
+    "data_operacao": "2026-07-01",
     "data_vencimento": "2026-08-15"
   }'
 ```
 
-Resposta esperada:
+Resposta esperada (valores conferem com o cenário "duplicata 45 dias" da spec de precificação):
 
 ```json
 {
@@ -80,10 +85,12 @@ Resposta esperada:
   "desagio": "363.61",
   "moeda_titulo": "BRL",
   "moeda_pagamento": "BRL",
-  "data_operacao": "2026-07-15",
+  "data_operacao": "2026-07-01",
   "data_vencimento": "2026-08-15"
 }
 ```
+
+Se a massa de demonstração já foi carregada (`docker compose --profile carga run --rm carga`), a taxa base acima já existe e o segundo `curl` funciona sozinho.
 
 ## Observabilidade
 

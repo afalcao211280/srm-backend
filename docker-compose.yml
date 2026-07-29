@@ -17,6 +17,12 @@ services:
     build: .
     depends_on:
       db: {condition: service_healthy}
+    # depends_on com service_healthy não garante que o postgres aceita
+    # conexão no exato instante em que reporta healthy — houve corrida real
+    # nesta verificação (api saiu com Exited(1) no primeiro `up`, subiu
+    # normalmente no retry manual). Sem restart, uma corrida perdida deixa
+    # o container morto em vez de se recuperar sozinho.
+    restart: on-failure:3
     environment:
       DATABASE_URL: postgres://srm:srm@db:5432/srm?sslmode=disable
       LOG_LEVEL: info
