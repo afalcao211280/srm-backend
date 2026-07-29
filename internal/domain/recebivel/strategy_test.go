@@ -1,6 +1,9 @@
 package recebivel
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestStrategyDuplicata(t *testing.T) {
 	r := DefaultRegistry()
@@ -30,7 +33,8 @@ func TestStrategyInexistente(t *testing.T) {
 	if err == nil {
 		t.Fatalf("esperado erro para tipo sem strategy")
 	}
-	if _, ok := err.(*TipoSemStrategyError); !ok {
+	var alvo *TipoSemStrategyError
+	if !errors.As(err, &alvo) {
 		t.Fatalf("erro: tipo inesperado %T: %v", err, err)
 	}
 }

@@ -1,6 +1,7 @@
 package precificacao
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -126,7 +127,8 @@ func TestBaseNaoPositiva(t *testing.T) {
 	if err == nil {
 		t.Fatalf("esperado erro de base não positiva")
 	}
-	if _, ok := err.(*BaseNaoPositivaError); !ok {
+	var alvo *BaseNaoPositivaError
+	if !errors.As(err, &alvo) {
 		t.Fatalf("erro: tipo inesperado %T: %v", err, err)
 	}
 }

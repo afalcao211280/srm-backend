@@ -1,74 +1,85 @@
+version: "2"
+
 run:
   timeout: 5m
   go: "1.26"
 
 linters:
-  disable-all: true
+  default: none
   enable:
+    - depguard
     - errcheck
     - errorlint
+    - forbidigo
     - funlen
     - gocognit
-    - gofmt
-    - goimports
     - gosec
     - govet
     - ineffassign
-    - misspell
     - revive
     - staticcheck
-    - stylecheck
-    - typecheck
     - unconvert
     - unused
+  settings:
+    funlen:
+      lines: 30
+      statements: 30
+    gocognit:
+      min-complexity: 16
+    revive:
+      rules:
+        - name: argument-limit
+          arguments:
+            - 3
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+          deny:
+            - pkg: "math/rand$"
+              desc: "use math/rand/v2"
+        internal-report:
+          files:
+            - "internal/report/**/*.go"
+          deny:
+            - pkg: "github.com/srm-asset/srm-backend/internal/domain"
+              desc: "relatórios em 2 camadas não importam domínio"
+        internal-domain:
+          files:
+            - "internal/domain/**/*.go"
+          deny:
+            - pkg: "github.com/srm-asset/srm-backend/internal/app"
+              desc: "domínio não importa camada de aplicação"
+            - pkg: "github.com/srm-asset/srm-backend/internal/infra"
+              desc: "domínio não importa camada de infra"
+        sem-float:
+          files:
+            - "internal/domain/**/*.go"
+            - "internal/infra/postgres/**/*.go"
+          deny:
+            - pkg: "encoding/json"
+              desc: "decimal sempre como string via MarshalJSON do tipo money"
+    forbidigo:
+      forbid:
+        - pattern: "float32|float64"
+          pkg: "github.com/srm-asset/srm-backend/internal/domain"
+          msg: "tipos de ponto flutuante proibidos no domínio"
+        - pattern: "float32|float64"
+          pkg: "github.com/srm-asset/srm-backend/internal/infra/postgres"
+          msg: "tipos de ponto flutuante proibidos na persistência"
+  exclusions:
+    rules:
+      # Limite de tamanho de função é sobre legibilidade de código de
+      # produção; testes tabulares e de integração legitimamente
+      # encadeiam mais passos de setup/assert sem ficarem menos claros.
+      - path: '_test\.go'
+        linters:
+          - funlen
+          - gocognit
+          - revive
 
-linters-settings:
-  funlen:
-    lines: 30
-    statements: 30
-  gocognit:
-    min-complexity: 16
-  revive:
-    rules:
-      - name: argument-limit
-        arguments:
-          - 3
-  depguard:
-    rules:
-      main:
-        files:
-          - $all
-        allow:
-          - $gostd
-        deny:
-          - pkg: "math/rand"
-            desc: "use math/rand/v2"
-      internal-report:
-        files:
-          - "internal/report/**/*.go"
-        deny:
-          - pkg: "github.com/srm-asset/srm-backend/internal/domain"
-            desc: "relatórios em 2 camadas não importam domínio"
-      internal-domain:
-        files:
-          - "internal/domain/**/*.go"
-        deny:
-          - pkg: "github.com/srm-asset/srm-backend/internal/app"
-            desc: "domínio não importa camada de aplicação"
-          - pkg: "github.com/srm-asset/srm-backend/internal/infra"
-            desc: "domínio não importa camada de infra"
-      sem-float:
-        files:
-          - "internal/domain/**/*.go"
-          - "internal/infra/postgres/**/*.go"
-        deny:
-          - pkg: "encoding/json"
-            desc: "decimal sempre como string via MarshalJSON do tipo money"
-      forbidigo:
-        forbid:
-          - pattern: "float32|float64"
-            pkg: "github.com/srm-asset/srm-backend/internal/domain"
-            desc: "tipos de ponto flutuante proibidos no domínio"
-          - pattern: "float32|float64"
-            pkg: "github.com/srm-asset/srm-backend/internal/infra/postgres"
-            desc: "tipos de ponto flutuante proibidos na persistência"
+formatters:
+  enable:
+    - gofmt
+    - goimports

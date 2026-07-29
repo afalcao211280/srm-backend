@@ -20,6 +20,10 @@ import (
 type Opcoes struct {
 	URL     string
 	Timeout time.Duration
+	// BreakerTimeout é o intervalo que o circuito permanece aberto antes de
+	// passar a meia-aberto. Default 30s em produção; testes injetam um
+	// valor pequeno para exercitar a transição sem sleep arbitrário.
+	BreakerTimeout time.Duration
 }
 
 type Cliente interface {
@@ -27,22 +31,25 @@ type Cliente interface {
 }
 
 type cliente struct {
-	url     string
-	http    *http.Client
-	cb      *gobreaker.CircuitBreaker[string]
-	logger  *slog.Logger
+	url    string
+	http   *http.Client
+	cb     *gobreaker.CircuitBreaker[string]
+	logger *slog.Logger
 }
 
 func NovoCliente(op Opcoes, logger *slog.Logger) Cliente {
 	if op.Timeout <= 0 {
 		op.Timeout = 2 * time.Second
 	}
+	if op.BreakerTimeout <= 0 {
+		op.BreakerTimeout = 30 * time.Second
+	}
 	cb := gobreaker.NewCircuitBreaker[string](gobreaker.Settings{
 		Name: "cambio",
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			return counts.ConsecutiveFailures >= 5
 		},
-		Timeout: 30 * time.Second,
+		Timeout: op.BreakerTimeout,
 		OnStateChange: func(name string, from, to gobreaker.State) {
 			logger.Warn("circuit breaker cambio",
 				slog.String("nome", name),
@@ -68,35 +75,36 @@ func (c *cliente) Cotacao(ctx context.Context, base, cotacao string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("criar requisição: %w", err)
 	}
-	res, err := c.cb.Execute(func() (string, error) {
-		req2 := req.WithContext(ctx)
-		resp, err := c.http.Do(req2)
-		if err != nil {
-			return "", fmt.Errorf("chamada externa: %w", err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("status %d", resp.StatusCode)
-		}
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return "", fmt.Errorf("ler resposta: %w", err)
-		}
-		var payload struct {
-			Taxa string `json:"taxa"`
-		}
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return "", fmt.Errorf("decodificar resposta: %w", err)
-		}
-		if !decimalValido(payload.Taxa) {
-			return "", fmt.Errorf("taxa inválida retornada: %s", payload.Taxa)
-		}
-		return payload.Taxa, nil
-	})
+	res, err := c.cb.Execute(func() (string, error) { return c.buscarTaxa(req) })
 	if err != nil {
 		return "", fmt.Errorf("circuit breaker cambio: %w", err)
 	}
 	return res, nil
+}
+
+func (c *cliente) buscarTaxa(req *http.Request) (string, error) {
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("chamada externa: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("ler resposta: %w", err)
+	}
+	var payload struct {
+		Taxa string `json:"taxa"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("decodificar resposta: %w", err)
+	}
+	if !decimalValido(payload.Taxa) {
+		return "", fmt.Errorf("taxa inválida retornada: %s", payload.Taxa)
+	}
+	return payload.Taxa, nil
 }
 
 func decimalValido(s string) bool {
