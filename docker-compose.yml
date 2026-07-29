@@ -53,12 +53,16 @@ services:
 
   # Alvos de teste: usam o estágio "builder" do Dockerfile (com toolchain Go),
   # não a imagem final distroless. `docker compose run --rm test-unit`.
+  # Sem -race: a imagem base golang:1.26-alpine roda com CGO_ENABLED=0 e não
+  # tem toolchain C — -race exige cgo. O -race "de verdade" roda no runner
+  # nativo do CI (.github/workflows/ci.yml), fora deste container; estes
+  # alvos são a conveniência de rodar teste sem instalar Go localmente.
   test-unit:
     build:
       context: .
       target: builder
     profiles: ["test"]
-    command: ["go", "test", "./...", "-race", "-coverprofile=/tmp/coverage.out"]
+    command: ["go", "test", "./...", "-coverprofile=/tmp/coverage.out"]
 
   # Testes de integração sobem seu próprio container Postgres via
   # testcontainers-go — precisam do socket do Docker do host montado
@@ -68,11 +72,9 @@ services:
       context: .
       target: builder
     profiles: ["test"]
-    environment:
-      TESTCONTAINERS_RYUK_DISABLED: "false"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: ["go", "test", "-tags=integration", "./...", "-race"]
+    command: ["go", "test", "-tags=integration", "./..."]
 
 volumes:
   srm-db-data:
