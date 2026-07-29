@@ -1,12 +1,16 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: srm
       POSTGRES_PASSWORD: srm
       POSTGRES_DB: srm
     ports: ["5432:5432"]
-    volumes: [srm-db-data:/var/lib/postgresql/data]
+    # A partir do postgres 18, a imagem oficial passou a esperar o mount em
+    # /var/lib/postgresql (não mais .../data) — guarda os dados num
+    # subdiretório com nome versionado internamente. Ver
+    # https://github.com/docker-library/postgres/pull/1259
+    volumes: [srm-db-data:/var/lib/postgresql]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U srm -d srm"]
       interval: 5s

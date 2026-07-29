@@ -47,7 +47,7 @@ func Subir(ctx context.Context) (*pgxpool.Pool, func(), error) {
 }
 
 func subirContainer(ctx context.Context) (dsn string, cleanup func(), err error) {
-	container, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+	container, err := tcpostgres.Run(ctx, "postgres:18-alpine",
 		tcpostgres.WithDatabase("srm_test"),
 		tcpostgres.WithUsername("srm"),
 		tcpostgres.WithPassword("srm"),
