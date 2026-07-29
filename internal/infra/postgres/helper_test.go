@@ -25,7 +25,7 @@ var testPool *pgxpool.Pool
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	container, err := postgres.Run(ctx, "postgres:16-alpine",
+	container, err := postgres.Run(ctx, "postgres:18-alpine",
 		postgres.WithDatabase("srm_test"),
 		postgres.WithUsername("srm"),
 		postgres.WithPassword("srm"),
