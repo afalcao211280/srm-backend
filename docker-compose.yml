@@ -45,10 +45,13 @@ services:
   frontend:
     build:
       context: ../srm-frontend
+      # rewrites() do Next.js é resolvido em build-time (congelado no
+      # routes-manifest.json do output standalone) — precisa chegar como
+      # build arg, environment: em runtime não tem efeito nenhum.
+      args:
+        API_INTERNAL_URL: http://api:8080
     depends_on:
       api: {condition: service_healthy}
-    environment:
-      API_INTERNAL_URL: http://api:8080
     ports: ["3000:3000"]
 
   # Alvos de teste: usam o estágio "builder" do Dockerfile (com toolchain Go),
